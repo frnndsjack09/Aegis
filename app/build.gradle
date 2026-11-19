@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.aegis.scanner'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.aegis.scanner'
+        minSdk 26          // Android 8.0 and newer
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Optional Shizuku deep check (Tools tab). Everything else uses the built-in Android SDK.
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303' // real org.json for unit tests (Android's is a stub there)
+}
