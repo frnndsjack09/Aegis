@@ -1634,7 +1634,7 @@ public class MainActivity extends Activity {
 
         TextView credits = text("Detection data: AssoEchap stalkerware-indicators (CC BY 4.0), AndroDR / "
                 + "android-sigma-rules (CC BY 4.0), MVT indicators (Amnesty International, Citizen Lab and others), "
-                + "Exodus Privacy trackers (ODbL 1.0), malware-filter phishing list (CC BY-SA 4.0), Phishing Army, "
+                + "Exodus Privacy trackers (ODbL 1.0), malware-filter phishing list (CC BY-SA 4.0), Phishing Army, HaGeZi Threat Intelligence Feeds (GPL-3.0), "
                 + "abuse.ch MalwareBazaar & URLhaus, Have I Been Pwned.", 11, cSub, false);
         credits.setGravity(Gravity.CENTER);
         credits.setLineSpacing(0, 1.2f);

@@ -68,7 +68,7 @@ public class LinkCheck {
         String fam = ioc.matchDomain(host);
         if (fam != null) bad.add("This is a website or server of \"" + fam + "\" (spy app or malware).");
         if (PhishDb.matches(phishing, host)) {
-            bad.add("Listed as a phishing site in public blocklists (OpenPhish, PhishTank, Phishing Army).");
+            bad.add("Listed as a phishing, scam or malware site in public blocklists (OpenPhish, PhishTank, Phishing Army, HaGeZi).");
         }
 
         if ("http".equals(u.getScheme()) && raw.trim().toLowerCase(Locale.ROOT).startsWith("http://")) {

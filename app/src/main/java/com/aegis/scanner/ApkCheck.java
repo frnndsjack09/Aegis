@@ -89,6 +89,14 @@ public final class ApkCheck {
                     + "someone else. Real updates are always signed by the same developer.");
             return v;
         }
+        // A file is never "from a store", so any bank-named file that isn't the official app id counts.
+        String fake = BankApps.fakeReason(f.label, f.pkg, false);
+        if (fake != null && !f.sameSigner) {
+            v.level = Finding.Level.RED;
+            v.headline = "Fake bank app";
+            v.reasons.add(fake);
+            return v;
+        }
         if (f.sameSigner) {
             v.level = Finding.Level.GREEN;
             v.headline = "Genuine copy of " + f.installedLabel;

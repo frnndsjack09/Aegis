@@ -11,6 +11,7 @@ An Android app that checks your phone for spy apps, malware, hidden access, traf
 - **When flagged apps last ran:** if you allow Usage access, each flagged app shows when it was last opened and last ran in the background.
 - **Hidden access:** apps with Accessibility (screen reading/control), Device admin, or Notification access.
 - **Suspicious apps:** a score combining install source (store or not), hidden icon, SMS/call-log/always-on location access, auto-start + microphone, system-sounding names, and banking-trojan signs: drawing over other apps (fake login screens) and NFC card reading or card emulation (NFC relay fraud).
+- **Fake bank and UPI apps:** apps named like SBI/YONO, HDFC, ICICI, Axis, Kotak, PNB, PhonePe, Paytm, Google Pay, BHIM and others that were installed from a file instead of the Play Store and don't use the official app id, plus app ids from reported fake-bank campaigns. Also checked by new-app alerts and the app-file check.
 - **Remote-control apps:** AnyDesk, TeamViewer QuickSupport/Host, RustDesk and AirDroid, plus any app that can both record the screen and tap for you. Marked "Act now" when its Accessibility access is on. Screen-sharing is a common UPI fraud in India.
 - **Interception:** user-installed security certificates, proxy, active VPN.
 - **Phone security:** screen lock, security-patch age, encryption, USB/wireless debugging, signs of rooting.
@@ -32,7 +33,7 @@ Every finding is rated **Act now / Review / Good to know / All good**, with butt
 - **Password leak check:** Have I Been Pwned. Only 5 characters of a hash leave the phone.
 - **Check an app file before installing:** pick an .apk, or tap it in WhatsApp/Files and choose "Open with Aegis". Reads the file without installing it. Flags known malware, fake copies of apps you already have (same app id, different signer), "wedding invitation", "RTO challan", "reward points" and bank-name lures, and risky requests (SMS, Accessibility, notifications, device admin, overlay, NFC). A file signed by the same developer as an installed app is shown as genuine. Offline.
 - **Scam message checker:** paste an SMS/WhatsApp message. Spots fake KYC, OTP and UPI-PIN requests, "digital arrest", electricity cut-off, parcel, prize, job and loan scams, wedding-invite and e-challan app files, expiring reward points, stock-tip and "guaranteed returns" investment groups, and call-merge OTP theft (English and Hinglish), checks every link inside, and offers **Report to Chakshu** (Sanchar Saathi) and **Call 1930**. Offline.
-- **Link checker:** fake bank/UPI/government sites, look-alike letters, hidden short links, spy-app and government-spyware sites, and offline phishing blocklists (OpenPhish/PhishTank via malware-filter; Phishing Army after an update), plus URLhaus with a free key.
+- **Link checker:** fake bank/UPI/government sites, look-alike letters, hidden short links, spy-app and government-spyware sites, and offline phishing and malware blocklists (OpenPhish/PhishTank via malware-filter; Phishing Army and HaGeZi Threat Intelligence Feeds after an update), plus URLhaus with a free key.
 - **Real mic/camera/location use (optional, Shizuku):** with the free Shizuku app (started via Wireless debugging, no root), reads Android's own record of when each app last used the mic, camera, location, SMS, contacts or clipboard.
 - **Malware database check:** compares every app with MalwareBazaar (free abuse.ch key).
 - **Update databases:** newest spy-app lists (all three sources), phishing lists and the Exodus tracker list. Everything also ships inside the app, so it works offline from the first launch.
@@ -68,7 +69,7 @@ Bundled copies are in `app/src/main/assets/`.
 - [android-sigma-rules/rules](https://github.com/android-sigma-rules/rules) ioc-data, used by AndroDR (CC BY 4.0): `androdr_*.yml`.
 - [MVT indicators](https://github.com/mvt-project/mvt-indicators) (Amnesty International, Citizen Lab and others), converted to `mvt_iocs.tsv`.
 - [Exodus Privacy](https://exodus-privacy.eu.org) tracker signatures (ODbL 1.0), via the android-sigma-rules mirror: `trackers.yml`. Exodus asks end-user apps not to call its API, so the app doesn't.
-- [malware-filter phishing-filter](https://gitlab.com/malware-filter/phishing-filter) (CC BY-SA 4.0; OpenPhish, PhishTank): `phishing_domains.txt`. [Phishing Army](https://phishing.army) is downloaded on update only.
+- [malware-filter phishing-filter](https://gitlab.com/malware-filter/phishing-filter) (CC BY-SA 4.0; OpenPhish, PhishTank): `phishing_domains.txt`. [Phishing Army](https://phishing.army) and [HaGeZi Threat Intelligence Feeds, mini](https://github.com/hagezi/dns-blocklists) (GPL-3.0) are downloaded on update only.
 - [Shizuku](https://github.com/RikkaApps/Shizuku) (Apache-2.0), optional.
 - [abuse.ch](https://abuse.ch) MalwareBazaar & URLhaus.
 - [Have I Been Pwned](https://haveibeenpwned.com) Pwned Passwords.

@@ -144,6 +144,12 @@ public final class Guard {
         String installer = Scanner.installerOf(pm, f.pkg);
         boolean sideloaded = pi.firstInstallTime >= Scanner.FACTORY_CUTOFF && !Scanner.fromStoreSource(pm, f.pkg)
                 && (installer == null || !Scanner.STORES.contains(installer));
+        String fake = BankApps.fakeReason(f.label, f.pkg, !sideloaded);
+        if (fake != null) {
+            a.title = "Act now: possible fake bank app (" + f.label + ")";
+            a.text = fake + " Don't open it or type anything into it. Uninstall it.";
+            return a;
+        }
         if (!sideloaded) return null;
         ApkCheck.Verdict v = ApkCheck.judge(f);
         if (v.level == Finding.Level.GREEN) return null;

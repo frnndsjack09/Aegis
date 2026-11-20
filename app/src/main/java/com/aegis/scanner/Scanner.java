@@ -128,6 +128,7 @@ public class Scanner {
         checkHiddenAccess(apps, byPkg, spyHits, accessibility, admins, notifEnabled, notifCapable);
         Set<String> skip = new HashSet<>(spyHits);
         skip.addAll(checkRemoteAccess(apps, spyHits, accessibility));
+        skip.addAll(checkFakeBankApps(apps, skip));
         Set<String> cardEmulators = servicesFor("android.nfc.cardemulation.action.HOST_APDU_SERVICE");
         checkSuspicionScore(apps, skip, accessibility, admins, notifEnabled, cardEmulators);
         checkSensitivePermissions(apps, spyHits);
@@ -565,6 +566,24 @@ public class Scanner {
         REMOTE_APPS.put("com.teamviewer.host.market", "TeamViewer Host");
         REMOTE_APPS.put("com.carriez.flutter_hbb", "RustDesk");
         REMOTE_APPS.put("com.sand.airdroid", "AirDroid");
+    }
+
+    /** Bank- or UPI-named apps installed from a file, and app ids from reported fake-bank campaigns. */
+    private Set<String> checkFakeBankApps(List<App> apps, Set<String> skip) {
+        Set<String> hits = new HashSet<>();
+        for (App a : apps) {
+            if (a.system || skip.contains(a.pkg) || trusted.contains(a.pkg)) continue;
+            String why = BankApps.fakeReason(a.label, a.pkg, !a.sideloaded);
+            if (why == null) continue;
+            hits.add(a.pkg);
+            findings.add(new Finding(Finding.Level.RED, "Fake bank apps", "Possible fake bank app: " + a.label,
+                    why + "\n\nFake bank apps copy the real app's look to steal your login, OTPs and card details. "
+                            + "Don't open it or type anything into it. Uninstall it, then use your bank's official app "
+                            + "from the Play Store. If you already entered details, call your bank and 1930 now.")
+                    .appActions(a.pkg)
+                    .action("Call 1930", Finding.ActionType.DIAL, "1930"));
+        }
+        return hits;
     }
 
     private Set<String> checkRemoteAccess(List<App> apps, Set<String> spyHits, Set<String> accessibility) {
