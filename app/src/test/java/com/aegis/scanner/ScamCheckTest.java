@@ -34,6 +34,24 @@ public class ScamCheckTest {
     }
 
     @Test
+    public void flagsApkLuresSeenIn2026() {
+        assertTrue(ScamCheck.check("Ravi weds Priya. Please see our wedding invitation card: Wedding_Invite.apk").likelyScam());
+        assertTrue(ScamCheck.check("Your RTO e-challan of Rs 500 is pending. Download mParivahan.apk to pay today.").likelyScam());
+        assertTrue(ScamCheck.check("Your SBI reward points worth Rs 7,250 expire today. Install SBI Rewards.apk to redeem.").likelyScam());
+    }
+
+    @Test
+    public void flagsInvestmentAndCallMergeScams() {
+        assertTrue(ScamCheck.check("Join our VIP stock tips group. Guaranteed returns of 30% every month. Institutional account IPO allotment.").likelyScam());
+        assertTrue(ScamCheck.check("Sir please merge the call with the bank officer to verify").likelyScam());
+    }
+
+    @Test
+    public void realWeddingTextWithoutLinkIsNotAScam() {
+        assertFalse(ScamCheck.check("So happy for you! The wedding card looked beautiful, see you on Sunday.").likelyScam());
+    }
+
+    @Test
     public void ordinaryMessageIsClean() {
         ScamCheck.Result r = ScamCheck.check("Hi, are we still meeting for lunch tomorrow at 1? Bring the photos.");
         assertEquals(0, r.score);

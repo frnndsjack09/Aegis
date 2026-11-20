@@ -34,6 +34,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Open with Aegis" / "Share to Aegis" on an .apk file: checks it before you install it. -->
+            <intent-filter android:label="Check with Aegis">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+            <intent-filter android:label="Check with Aegis">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
         </activity>
 
         <!-- Lets the optional Shizuku app hand Aegis its read-only shell access (Tools → mic/camera usage). -->

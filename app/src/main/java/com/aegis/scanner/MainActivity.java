@@ -81,6 +81,12 @@ public class MainActivity extends Activity {
     private int currentTab = -1;
     private Runnable onToolsShown;
 
+    // app-file check (Tools tab)
+    private static final int REQ_APK = 41;
+    private LinearLayout apkCard;
+    private Button apkBtn;
+    private TextView apkResult;
+
     // scan tab state
     private ScoreRing ring;
     private Button scanButton;
@@ -134,6 +140,90 @@ public class MainActivity extends Activity {
         showTab(0);
 
         setContentView(root);
+        handleIncoming(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleIncoming(intent);
+    }
+
+    /** "Open with Aegis" or "Share to Aegis" on an .apk file (for example from WhatsApp or Files). */
+    @SuppressWarnings("deprecation")
+    private void handleIncoming(Intent in) {
+        if (in == null) return;
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(in.getAction())) uri = in.getData();
+        else if (Intent.ACTION_SEND.equals(in.getAction())) uri = in.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri != null) checkApk(uri);
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_APK && res == RESULT_OK && data != null && data.getData() != null) checkApk(data.getData());
+    }
+
+    private void pickApk() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                .putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/vnd.android.package-archive", "application/octet-stream"});
+        try {
+            startActivityForResult(i, REQ_APK);
+        } catch (ActivityNotFoundException e) {
+            toast("No file picker on this phone");
+        }
+    }
+
+    private void checkApk(Uri uri) {
+        showTab(1);
+        pages[1].post(() -> pages[1].smoothScrollTo(0, Math.max(0, offsetTop(apkCard, pages[1].getChildAt(0)) - dp(8))));
+        setBusy(apkBtn, true, "Checking…");
+        worker.execute(() -> {
+            String text;
+            int fg, bg;
+            try {
+                ApkCheck.Facts f = ApkCheck.inspect(this, uri, IocDb.load(this));
+                ApkCheck.Verdict v = ApkCheck.judge(f);
+                StringBuilder sb = new StringBuilder();
+                sb.append(v.level == Finding.Level.RED ? "⚠ " : v.level == Finding.Level.GREEN ? "✓ " : "")
+                        .append(v.headline.toUpperCase(Locale.ROOT)).append("\n\n");
+                if (!f.label.isEmpty()) {
+                    sb.append("App: ").append(f.label);
+                    if (!f.version.isEmpty()) sb.append(" ").append(f.version);
+                    sb.append("\nApp id: ").append(f.pkg).append('\n');
+                }
+                if (!f.fileName.isEmpty()) sb.append("File: ").append(f.fileName).append('\n');
+                sb.append('\n');
+                for (String r : v.reasons) sb.append("• ").append(r).append('\n');
+                if (v.level == Finding.Level.RED) {
+                    sb.append("\nDelete this file and the message it came with. If you already installed it: turn on "
+                            + "Airplane mode, uninstall it, call your bank to block cards and UPI, then call 1930.");
+                } else if (v.level == Finding.Level.YELLOW) {
+                    sb.append("\nOnly install it if you know exactly who made it. Get apps from the Play Store when you can.");
+                } else {
+                    sb.append("\nThis only means no warning signs were found. Apps from the Play Store are still safer "
+                            + "than files sent by message.");
+                }
+                text = sb.toString();
+                fg = v.level == Finding.Level.RED ? cRed : v.level == Finding.Level.YELLOW ? cYellow : cGreen;
+                bg = v.level == Finding.Level.RED ? cRedBg : v.level == Finding.Level.YELLOW ? cYellowBg : cGreenBg;
+            } catch (SecurityException e) {
+                text = "The app that shared this file didn't let Aegis open it. Tap \"Choose an app file\" and pick it from Downloads instead.";
+                fg = cSub;
+                bg = alpha(cSub, 0x14);
+            } catch (Exception e) {
+                text = "Couldn't read this file: " + e.getMessage();
+                fg = cSub;
+                bg = alpha(cSub, 0x14);
+            }
+            final String t = text;
+            final int f1 = fg, b1 = bg;
+            main.post(() -> {
+                setBusy(apkBtn, false, "Choose an app file");
+                showResult(apkResult, t, f1, b1);
+            });
+        });
     }
 
     @Override
@@ -670,6 +760,19 @@ public class MainActivity extends Activity {
 
     private View buildToolsTab() {
         LinearLayout page = page();
+
+        // --- App file check (before installing)
+        apkCard = card();
+        apkCard.addView(cardHeader("📦", "Check an app file before installing", cRed, cRedBg));
+        apkCard.addView(cardText("Got a \"wedding invitation\", \"RTO challan\", \"reward points\" or bank app as an .apk "
+                + "file on WhatsApp? Check it here first. Aegis reads the file without installing it. You can also "
+                + "tap the file in WhatsApp or Files and choose \"Open with Aegis\"."));
+        apkResult = resultBox();
+        apkBtn = primaryButton("Choose an app file");
+        apkBtn.setOnClickListener(v -> pickApk());
+        apkCard.addView(apkBtn);
+        apkCard.addView(apkResult);
+        page.addView(apkCard);
 
         // --- Trackers
         LinearLayout tr = card();
@@ -1314,6 +1417,18 @@ public class MainActivity extends Activity {
                         + "and Usage access.\n"
                         + "• Turn on Find Device in your Mi account so you can lock or wipe a lost phone.",
                 "Open Settings", Finding.ActionType.OPEN_SETTINGS, Settings.ACTION_SETTINGS));
+
+        page.addView(tip("SIMs in your name, lost phones, second-hand phones",
+                "Sanchar Saathi (Department of Telecommunications) shows every mobile number issued in your name "
+                        + "(TAFCOP): report any you don't use. It also blocks a lost or stolen phone (CEIR) and checks a "
+                        + "second-hand phone's IMEI before you buy it.",
+                "Open Sanchar Saathi", Finding.ActionType.OPEN_URL, "https://sancharsaathi.gov.in/"));
+
+        page.addView(tip("Never share your screen with a \"bank officer\"",
+                "No bank, UPI app or government office will ask you to install AnyDesk, TeamViewer, RustDesk or any "
+                        + "screen-sharing app, or to merge a call. If someone did and you shared a code: uninstall the app, "
+                        + "change your UPI PIN, call your bank, then call 1930. Aegis flags these apps in every scan.",
+                null, null, null));
 
         page.addView(tip("Google Play Protect",
                 "Open the Play Store → tap your profile picture → Play Protect → make sure \"Scan apps\" is on.",

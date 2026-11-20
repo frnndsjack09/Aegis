@@ -63,8 +63,12 @@ public class Scanner {
             "com.bbk.appstore", "com.vivo.appstore", // Vivo
             "com.amazon.venezia",              // Amazon
             "org.fdroid.fdroid", "org.fdroid.basic",  // F-Droid
-            "com.google.android.feedback"
+            "com.google.android.feedback",
+            "com.facebook.system"               // Facebook App Manager, preloaded; installs Facebook's own apps
     ));
+
+    /** 1 Jan 2009. Preloaded apps report an install time at the 1970 epoch; real installs are far later. */
+    private static final long FACTORY_CUTOFF = 1230768000000L;
 
     private static final String[] SYSTEMY_WORDS = {
             "system", "service", "update", "sync", "wifi", "wi-fi", "settings",
@@ -75,6 +79,7 @@ public class Scanner {
         String pkg, label, installer, apk;
         boolean system, sideloaded, hidden;
         long updated;
+        int uid;
         Set<String> granted = new HashSet<>();
         Set<String> requested = new HashSet<>();
         /** Signing certificates as upper-case SHA-1 and SHA-256 hex (sources use either). */
@@ -121,7 +126,10 @@ public class Scanner {
 
         p.update("Looking for suspicious behaviour…", 80);
         checkHiddenAccess(apps, byPkg, spyHits, accessibility, admins, notifEnabled, notifCapable);
-        checkSuspicionScore(apps, spyHits, accessibility, admins, notifEnabled);
+        Set<String> skip = new HashSet<>(spyHits);
+        skip.addAll(checkRemoteAccess(apps, spyHits, accessibility));
+        Set<String> cardEmulators = servicesFor("android.nfc.cardemulation.action.HOST_APDU_SERVICE");
+        checkSuspicionScore(apps, skip, accessibility, admins, notifEnabled, cardEmulators);
         checkSensitivePermissions(apps, spyHits);
 
         p.update("Checking for interception (certificates, VPN, proxy)…", 88);
@@ -169,10 +177,15 @@ public class Scanner {
             a.system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             try { a.label = pm.getApplicationLabel(ai).toString(); } catch (Exception e) { a.label = a.pkg; }
             a.apk = ai.sourceDir;
+            a.uid = ai.uid;
             a.updated = pi.lastUpdateTime;
             a.installer = installerOf(a.pkg);
-            a.sideloaded = !a.system && (a.installer == null || !STORES.contains(a.installer));
-            a.hidden = !a.system && !launchable.contains(a.pkg);
+            // Phone makers (e.g. Xiaomi) preload removable apps like the Screen Recorder outside /system.
+            // They have no installer and often no icon, but their install time is the factory epoch (1970).
+            boolean factory = pi.firstInstallTime < FACTORY_CUTOFF;
+            a.sideloaded = !a.system && !factory && !fromStoreSource(a.pkg)
+                    && (a.installer == null || !STORES.contains(a.installer));
+            a.hidden = !a.system && !factory && !launchable.contains(a.pkg);
 
             if (pi.requestedPermissions != null) {
                 for (int i = 0; i < pi.requestedPermissions.length; i++) {
@@ -208,6 +221,21 @@ public class Scanner {
         return new Signature[0];
     }
 
+    /**
+     * Android 13+ records whether an app came from a store. This matters when the store was later
+     * removed (e.g. a debloated Facebook App Installer): Android then hides the installer's name
+     * from other apps, so it would otherwise look like a sideload.
+     */
+    private boolean fromStoreSource(String pkg) {
+        if (Build.VERSION.SDK_INT < 33) return false;
+        try {
+            return pm.getInstallSourceInfo(pkg).getPackageSource()
+                    == android.content.pm.PackageInstaller.PACKAGE_SOURCE_STORE;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @SuppressWarnings("deprecation")
     private String installerOf(String pkg) {
         try {
@@ -223,12 +251,19 @@ public class Scanner {
     // ------------------------------------------------------------------ known spy apps
 
     private Set<String> checkKnownSpyApps(List<App> apps) {
+        // Some spy-app samples were signed with Android's public test keys, which also sign built-in
+        // system parts (e.g. com.android.cts.priv.ctsshim). A certificate that signs this phone's own
+        // system apps can't identify a spy app, so skip those; package and file-hash matches still apply.
+        Set<String> systemCerts = new HashSet<>();
+        for (App a : apps) if (a.system) systemCerts.addAll(a.certHashes);
+
         Set<String> hits = new HashSet<>();
         for (App a : apps) {
             String fam = ioc.packages.get(a.pkg);
             String how = "package name";
             if (fam == null) {
                 for (String c : a.certHashes) {
+                    if (systemCerts.contains(c)) continue;
                     fam = ioc.certs.get(c);
                     if (fam != null) { how = "signing certificate"; break; }
                 }
@@ -444,7 +479,7 @@ public class Scanner {
 
     /** AMDH-style score: combines install source, hidden icon, access and permissions. */
     private void checkSuspicionScore(List<App> apps, Set<String> spyHits, Set<String> accessibility,
-                                     Set<String> admins, Set<String> notifEnabled) {
+                                     Set<String> admins, Set<String> notifEnabled, Set<String> cardEmulators) {
         for (App a : apps) {
             if (a.system || spyHits.contains(a.pkg) || trusted.contains(a.pkg)) continue;
             int score = 0;
@@ -475,6 +510,17 @@ public class Scanner {
             if (a.requested.contains("android.permission.REQUEST_INSTALL_PACKAGES") && !STORES.contains(a.pkg)) {
                 score += 1; why.add("can install other apps");
             }
+            // Banking trojans (2025-26 families such as Rokarolla, RemControl) put fake login screens over bank apps.
+            if (a.sideloaded && canDrawOverApps(a)) {
+                score += 2; why.add("can draw over other apps, which fake bank login screens need");
+            }
+            // NFC relay malware (NGate, SuperCard X) asks you to tap your bank card on the phone and relays it.
+            if (a.sideloaded && a.requested.contains("android.permission.NFC")) {
+                score += 1; why.add("can read contactless bank cards with NFC");
+            }
+            if (a.sideloaded && cardEmulators.contains(a.pkg)) {
+                score += 2; why.add("can act as a contactless payment card");
+            }
             if (a.sideloaded && looksLikeSystem(a.label)) {
                 score += 2; why.add("downloaded app with a system-sounding name (\"" + a.label + "\")");
             }
@@ -488,6 +534,63 @@ public class Scanner {
                         .appActions(a.pkg));
             }
         }
+    }
+
+    /** True if the app may show windows over other apps ("Display over other apps"). */
+    @SuppressWarnings("deprecation")
+    private boolean canDrawOverApps(App a) {
+        if (!a.requested.contains("android.permission.SYSTEM_ALERT_WINDOW")) return false;
+        try {
+            AppOpsManager ops = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
+            int mode = Build.VERSION.SDK_INT >= 29
+                    ? ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, a.uid, a.pkg)
+                    : ops.checkOpNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, a.uid, a.pkg);
+            return mode == AppOpsManager.MODE_ALLOWED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ------------------------------------------------------------------ remote control
+
+    /** Remote-support apps that let someone else see or control THIS phone. Used in screen-sharing UPI fraud. */
+    static final Map<String, String> REMOTE_APPS = new HashMap<>();
+    static {
+        REMOTE_APPS.put("com.anydesk.anydeskandroid", "AnyDesk");
+        REMOTE_APPS.put("com.teamviewer.quicksupport.market", "TeamViewer QuickSupport");
+        REMOTE_APPS.put("com.teamviewer.host.market", "TeamViewer Host");
+        REMOTE_APPS.put("com.carriez.flutter_hbb", "RustDesk");
+        REMOTE_APPS.put("com.sand.airdroid", "AirDroid");
+    }
+
+    private Set<String> checkRemoteAccess(List<App> apps, Set<String> spyHits, Set<String> accessibility) {
+        Set<String> hits = new HashSet<>();
+        for (App a : apps) {
+            if (a.system || spyHits.contains(a.pkg) || trusted.contains(a.pkg)) continue;
+            String known = REMOTE_APPS.get(a.pkg);
+            boolean control = accessibility.contains(a.pkg);
+            // An unknown app that can both record the screen and tap for you works like a remote-control tool (SpyNote, Mirax).
+            boolean screenAndControl = control
+                    && a.requested.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION");
+            if (known == null && !screenAndControl) continue;
+            hits.add(a.pkg);
+            String name = known != null ? known : a.label;
+            Finding.Level lvl = control && (known != null || a.sideloaded) ? Finding.Level.RED : Finding.Level.YELLOW;
+            String body = known != null
+                    ? "\"" + a.label + "\" lets another person see your screen"
+                            + (control ? " and control your phone. Its Accessibility access is ON, so they can control it right now." : ".")
+                    : "\"" + a.label + "\" (" + a.pkg + ") can record your screen and has Accessibility access to tap and type "
+                            + "for you. That is everything a remote-control tool needs."
+                            + (a.sideloaded ? " It was installed from a file, not a store." : "");
+            findings.add(new Finding(lvl, "Remote access", "Remote-control app: " + name,
+                    body + "\n\nNo bank, UPI app, telecom company or government office will ever ask you to install AnyDesk, "
+                            + "TeamViewer, RustDesk or any screen-sharing app. If a caller asked you to install this: uninstall it, "
+                            + "change your UPI PIN and call 1930.\n\nIf you use it yourself (for example with your own computer), "
+                            + "tap \"I trust this app\".")
+                    .appActions(a.pkg)
+                    .action("Call 1930", Finding.ActionType.DIAL, "1930"));
+        }
+        return hits;
     }
 
     private static boolean looksLikeSystem(String label) {
