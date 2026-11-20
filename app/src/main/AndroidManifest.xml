@@ -16,6 +16,10 @@
         tools:ignore="ProtectedPermissions" />
     <!-- Android 16+: read whether Advanced Protection is on. -->
     <uses-permission android:name="android.permission.QUERY_ADVANCED_PROTECTION_MODE" />
+    <!-- Alerts for risky new apps and scam messages (you allow this when you turn them on). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Keeps the new-app check scheduled after the phone restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="false"
@@ -45,7 +49,30 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/vnd.android.package-archive" />
             </intent-filter>
+            <!-- "Share to Aegis" on a message: runs the scam checker on it. -->
+            <intent-filter android:label="Check with Aegis">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
+
+        <!-- New-app check, about every 15 minutes. -->
+        <service
+            android:name=".GuardJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Scam alerts: only runs if you grant Notification access in Settings. -->
+        <service
+            android:name=".ScamAlertService"
+            android:exported="true"
+            android:label="Aegis scam alerts"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Lets the optional Shizuku app hand Aegis its read-only shell access (Tools → mic/camera usage). -->
         <provider

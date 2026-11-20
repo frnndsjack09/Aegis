@@ -19,6 +19,11 @@ An Android app that checks your phone for spy apps, malware, hidden access, traf
 
 Every finding is rated **Act now / Review / Good to know / All good**, with buttons to open the right settings page, app info, or uninstall. Apps you know are fine can be marked "I trust this app".
 
+**Live protection** (Scan tab, both off until you turn them on)
+- **New-app alerts:** checks every app you install or update and notifies you right away if it's a known spy app, a remote-control app, or a risky app installed from a file. Background check about every 15 minutes, instant while scam alerts are on. Notification has an Uninstall button.
+- **Scam message alerts:** reads new SMS, WhatsApp and Telegram notifications, runs the offline scam checker and link checker, and warns you about scams. Messages are never stored or sent anywhere. Needs Notification access; on Android 13+ sideloaded apps first need App info → ⋮ → Allow restricted settings. Tap the alert to see the full explanation.
+- **Share to Aegis:** share any message text to Aegis to check it.
+
 **Tools tab** (uses the internet only when you tap)
 - **Trackers inside your apps:** finds Facebook, Google, AppsFlyer and other tracking code (Exodus Privacy method).
 - **Password leak check:** Have I Been Pwned. Only 5 characters of a hash leave the phone.

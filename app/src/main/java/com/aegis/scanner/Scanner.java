@@ -54,7 +54,7 @@ public class Scanner {
     static final String PREFS = "aegis";
 
     /** App stores we treat as normal install sources. Anything else counts as "installed from outside a store". */
-    private static final Set<String> STORES = new HashSet<>(Arrays.asList(
+    static final Set<String> STORES = new HashSet<>(Arrays.asList(
             "com.android.vending",            // Google Play
             "com.xiaomi.market", "com.xiaomi.mipicks", "com.xiaomi.discover", // Xiaomi GetApps
             "com.sec.android.app.samsungapps",  // Galaxy Store
@@ -68,7 +68,7 @@ public class Scanner {
     ));
 
     /** 1 Jan 2009. Preloaded apps report an install time at the 1970 epoch; real installs are far later. */
-    private static final long FACTORY_CUTOFF = 1230768000000L;
+    static final long FACTORY_CUTOFF = 1230768000000L;
 
     private static final String[] SYSTEMY_WORDS = {
             "system", "service", "update", "sync", "wifi", "wi-fi", "settings",
@@ -179,11 +179,11 @@ public class Scanner {
             a.apk = ai.sourceDir;
             a.uid = ai.uid;
             a.updated = pi.lastUpdateTime;
-            a.installer = installerOf(a.pkg);
+            a.installer = installerOf(pm, a.pkg);
             // Phone makers (e.g. Xiaomi) preload removable apps like the Screen Recorder outside /system.
             // They have no installer and often no icon, but their install time is the factory epoch (1970).
             boolean factory = pi.firstInstallTime < FACTORY_CUTOFF;
-            a.sideloaded = !a.system && !factory && !fromStoreSource(a.pkg)
+            a.sideloaded = !a.system && !factory && !fromStoreSource(pm, a.pkg)
                     && (a.installer == null || !STORES.contains(a.installer));
             a.hidden = !a.system && !factory && !launchable.contains(a.pkg);
 
@@ -226,7 +226,7 @@ public class Scanner {
      * removed (e.g. a debloated Facebook App Installer): Android then hides the installer's name
      * from other apps, so it would otherwise look like a sideload.
      */
-    private boolean fromStoreSource(String pkg) {
+    static boolean fromStoreSource(PackageManager pm, String pkg) {
         if (Build.VERSION.SDK_INT < 33) return false;
         try {
             return pm.getInstallSourceInfo(pkg).getPackageSource()
@@ -237,7 +237,7 @@ public class Scanner {
     }
 
     @SuppressWarnings("deprecation")
-    private String installerOf(String pkg) {
+    static String installerOf(PackageManager pm, String pkg) {
         try {
             if (Build.VERSION.SDK_INT >= 30) {
                 return pm.getInstallSourceInfo(pkg).getInstallingPackageName();

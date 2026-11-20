@@ -21,13 +21,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Signs with the permanent release key from repo secrets, so each release installs over the last one.
       - name: Build
+        env:
+          AEGIS_KEYSTORE_B64: ${{ secrets.AEGIS_KEYSTORE_B64 }}
+          AEGIS_KEYSTORE_PASSWORD: ${{ secrets.AEGIS_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          if [ -n "$AEGIS_KEYSTORE_B64" ]; then
+            echo "$AEGIS_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/aegis.jks"
+            export AEGIS_KEYSTORE="$RUNNER_TEMP/aegis.jks"
+          fi
+          ./gradlew testReleaseUnitTest assembleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/aegis.jks"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Aegis.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Aegis.apk
 
       - uses: actions/upload-artifact@v4
         with:

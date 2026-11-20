@@ -81,6 +81,16 @@ public class MainActivity extends Activity {
     private int currentTab = -1;
     private Runnable onToolsShown;
 
+    // scam message checker (Tools tab), filled in from "Share to Aegis" and scam alerts
+    private LinearLayout msgCard;
+    private EditText msgInput;
+    private Button msgBtn;
+
+    // live protection (Scan tab)
+    private static final int REQ_NOTIFY = 42;
+    private TextView guardStatus, alertStatus;
+    private Button guardBtn, alertBtn;
+
     // app-file check (Tools tab)
     private static final int REQ_APK = 41;
     private LinearLayout apkCard;
@@ -140,6 +150,10 @@ public class MainActivity extends Activity {
         showTab(0);
 
         setContentView(root);
+        if (Guard.isOn(this)) {
+            Guard.schedule(this); // re-arm in case the phone maker's battery saver dropped the job
+            worker.execute(() -> Guard.checkChanged(getApplicationContext()));
+        }
         handleIncoming(getIntent());
     }
 
@@ -156,7 +170,118 @@ public class MainActivity extends Activity {
         Uri uri = null;
         if (Intent.ACTION_VIEW.equals(in.getAction())) uri = in.getData();
         else if (Intent.ACTION_SEND.equals(in.getAction())) uri = in.getParcelableExtra(Intent.EXTRA_STREAM);
-        if (uri != null) checkApk(uri);
+        if (uri != null) { checkApk(uri); return; }
+        String text = Intent.ACTION_SEND.equals(in.getAction()) ? in.getStringExtra(Intent.EXTRA_TEXT) : null;
+        if (text != null && !text.trim().isEmpty()) checkMessage(text);
+    }
+
+    /** Shared text or a tapped scam alert: open the scam checker with the message and run it. */
+    private void checkMessage(String text) {
+        showTab(1);
+        msgInput.setText(text);
+        pages[1].post(() -> pages[1].smoothScrollTo(0, Math.max(0, offsetTop(msgCard, pages[1].getChildAt(0)) - dp(8))));
+        msgBtn.performClick();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshProtection();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        refreshProtection();
+    }
+
+    private boolean needsNotifyPermission() {
+        return android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void askNotifyPermission() {
+        if (needsNotifyPermission()) requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
+    }
+
+    private View buildProtectionCard() {
+        LinearLayout c = card();
+        c.addView(cardHeader("🛡", "Live protection", cGreen, cGreenBg));
+
+        c.addView(protectionTitle("New-app alerts"));
+        c.addView(cardText("Checks every app you install and warns you at once if it's a known spy app, a "
+                + "remote-control app, or a risky app installed from a file. Runs about every 15 minutes, using "
+                + "almost no battery."));
+        guardStatus = statusLine();
+        c.addView(guardStatus);
+        guardBtn = smallButton("Turn on", cPrimary);
+        guardBtn.setOnClickListener(v -> {
+            boolean on = !Guard.isOn(this);
+            if (on) askNotifyPermission();
+            worker.execute(() -> {
+                Guard.setOn(getApplicationContext(), on);
+                main.post(this::refreshProtection);
+            });
+        });
+        c.addView(guardBtn);
+
+        c.addView(protectionTitle("Scam message alerts"));
+        c.addView(cardText("Reads new SMS, WhatsApp and Telegram messages as they arrive and warns you about scams "
+                + "and dangerous links. Messages are checked on the phone and never stored or sent anywhere. "
+                + "Needs Notification access. If Android says \"Restricted setting\", open App info → ⋮ → "
+                + "Allow restricted settings, then try again."));
+        alertStatus = statusLine();
+        c.addView(alertStatus);
+        LinearLayout row = new LinearLayout(this);
+        alertBtn = smallButton("Turn on", cPrimary);
+        alertBtn.setOnClickListener(v -> {
+            askNotifyPermission();
+            Intent i;
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                i = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                        .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                                new android.content.ComponentName(this, ScamAlertService.class).flattenToString());
+            } else {
+                i = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+            }
+            try { startActivity(i); }
+            catch (ActivityNotFoundException e) { launch(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); }
+        });
+        Button info = smallButton("App info", cSub);
+        info.setOnClickListener(v -> launch(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName()))));
+        row.addView(alertBtn);
+        row.addView(info);
+        c.addView(row);
+        refreshProtection();
+        return c;
+    }
+
+    private TextView protectionTitle(String s) {
+        TextView t = text(s, 16, cText, true);
+        t.setPadding(0, dp(10), 0, dp(2));
+        return t;
+    }
+
+    private TextView statusLine() {
+        TextView t = text("", 13, cSub, true);
+        t.setPadding(0, dp(6), 0, dp(6));
+        return t;
+    }
+
+    private void refreshProtection() {
+        if (guardStatus == null) return;
+        boolean muted = !Guard.canNotify(this);
+        boolean guardOn = Guard.isOn(this);
+        guardStatus.setText(guardOn ? (muted ? "● On, but notifications are blocked. Allow them in App info." : "● On")
+                : "○ Off");
+        guardStatus.setTextColor(guardOn ? (muted ? cYellow : cGreen) : cSub);
+        guardBtn.setText(guardOn ? "Turn off" : "Turn on");
+        boolean alertsOn = ScamAlertService.isEnabled(this);
+        alertStatus.setText(alertsOn ? (muted ? "● On, but notifications are blocked. Allow them in App info." : "● On")
+                : "○ Off");
+        alertStatus.setTextColor(alertsOn ? (muted ? cYellow : cGreen) : cSub);
+        alertBtn.setText(alertsOn ? "Turn off" : "Turn on");
     }
 
     @Override
@@ -462,6 +587,7 @@ public class MainActivity extends Activity {
         scanButton.setOnClickListener(v -> startScan());
         hero.addView(scanButton);
         page.addView(hero);
+        page.addView(buildProtectionCard());
 
         resultsBox = new LinearLayout(this);
         resultsBox.setOrientation(LinearLayout.VERTICAL);
@@ -854,6 +980,8 @@ public class MainActivity extends Activity {
         smInput.setMaxLines(8);
         smInput.setGravity(Gravity.TOP | Gravity.START);
         sm.addView(smInput);
+        msgCard = sm;
+        msgInput = smInput;
         TextView smResult = resultBox();
         LinearLayout smActions = new LinearLayout(this);
         smActions.setVisibility(View.GONE);
@@ -864,6 +992,7 @@ public class MainActivity extends Activity {
         smActions.addView(chakshu);
         smActions.addView(call1930);
         Button smBtn = primaryButton("Check message");
+        msgBtn = smBtn;
         smBtn.setOnClickListener(v -> {
             String msg = smInput.getText().toString().trim();
             if (msg.isEmpty()) { shake(smInput); toast("Paste a message first"); return; }

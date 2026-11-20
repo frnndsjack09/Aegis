@@ -193,31 +193,10 @@ public final class ApkCheck {
             ai.sourceDir = tmp.getPath();
             ai.publicSourceDir = tmp.getPath();
             try { f.label = pm.getApplicationLabel(ai).toString(); } catch (Exception e) { f.label = f.pkg; }
-            if (pi.requestedPermissions != null) for (String p : pi.requestedPermissions) f.perms.add(p);
-            if (pi.services != null) for (ServiceInfo s : pi.services) {
-                if ("android.permission.BIND_ACCESSIBILITY_SERVICE".equals(s.permission)) f.accessibilityService = true;
-                if ("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(s.permission)) f.notificationListener = true;
-                if ("android.permission.BIND_NFC_SERVICE".equals(s.permission)) f.cardEmulator = true;
-            }
-            if (pi.receivers != null) for (ActivityInfo r : pi.receivers) {
-                if ("android.permission.BIND_DEVICE_ADMIN".equals(r.permission)) f.deviceAdmin = true;
-            }
-            for (Signature s : signatures(pi)) {
-                f.certs.add(Scanner.sha1(s.toByteArray()));
-                f.certs.add(Scanner.sha256(s.toByteArray()));
-            }
-
-            // Known malware: file fingerprint, app id, then certificate (skipping certs that sign this phone's system apps).
+            fill(f, pi);
             String fam = ioc.hashes.get(f.sha256);
             if (fam != null) { f.iocFamily = fam; f.iocHow = "file fingerprint"; }
-            if (f.iocFamily == null && (fam = ioc.packages.get(f.pkg)) != null) { f.iocFamily = fam; f.iocHow = "app id (" + f.pkg + ")"; }
-            if (f.iocFamily == null) {
-                Set<String> systemCerts = systemCerts(pm, sig);
-                for (String c : f.certs) {
-                    if (systemCerts.contains(c)) continue;
-                    if ((fam = ioc.certs.get(c)) != null) { f.iocFamily = fam; f.iocHow = "signing certificate"; break; }
-                }
-            }
+            matchIoc(f, ioc, pm);
 
             try {
                 PackageInfo inst = pm.getPackageInfo(f.pkg, sig);
@@ -236,6 +215,39 @@ public final class ApkCheck {
             //noinspection ResultOfMethodCallIgnored
             tmp.delete();
         }
+    }
+
+    /** Permissions, sensitive services and signing certificates from a parsed app (file or installed). */
+    static void fill(Facts f, PackageInfo pi) {
+        if (pi.requestedPermissions != null) for (String p : pi.requestedPermissions) f.perms.add(p);
+        if (pi.services != null) for (ServiceInfo s : pi.services) {
+            if ("android.permission.BIND_ACCESSIBILITY_SERVICE".equals(s.permission)) f.accessibilityService = true;
+            if ("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(s.permission)) f.notificationListener = true;
+            if ("android.permission.BIND_NFC_SERVICE".equals(s.permission)) f.cardEmulator = true;
+        }
+        if (pi.receivers != null) for (ActivityInfo r : pi.receivers) {
+            if ("android.permission.BIND_DEVICE_ADMIN".equals(r.permission)) f.deviceAdmin = true;
+        }
+        for (Signature s : signatures(pi)) {
+            f.certs.add(Scanner.sha1(s.toByteArray()));
+            f.certs.add(Scanner.sha256(s.toByteArray()));
+        }
+    }
+
+    /** Known malware by app id, then certificate (skipping certs that also sign this phone's system apps). */
+    static void matchIoc(Facts f, IocDb ioc, PackageManager pm) {
+        String fam;
+        if (f.iocFamily == null && (fam = ioc.packages.get(f.pkg)) != null) { f.iocFamily = fam; f.iocHow = "app id (" + f.pkg + ")"; }
+        if (f.iocFamily != null) return;
+        Set<String> systemCerts = systemCerts(pm);
+        for (String c : f.certs) {
+            if (systemCerts.contains(c)) continue;
+            if ((fam = ioc.certs.get(c)) != null) { f.iocFamily = fam; f.iocHow = "signing certificate"; return; }
+        }
+    }
+
+    static int sigFlag() {
+        return Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
     }
 
     private static String displayName(Context ctx, Uri uri) {
@@ -259,10 +271,14 @@ public final class ApkCheck {
         return new Signature[0];
     }
 
-    private static Set<String> systemCerts(PackageManager pm, int sigFlag) {
+    private static Set<String> systemCertCache;
+
+    /** Certificates that sign this phone's system apps. Cached: system apps only change with an OS update. */
+    private static synchronized Set<String> systemCerts(PackageManager pm) {
+        if (systemCertCache != null) return systemCertCache;
         Set<String> out = new HashSet<>();
         try {
-            for (PackageInfo p : pm.getInstalledPackages(sigFlag)) {
+            for (PackageInfo p : pm.getInstalledPackages(sigFlag())) {
                 if (p.applicationInfo == null || (p.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0) continue;
                 for (Signature s : signatures(p)) {
                     out.add(Scanner.sha1(s.toByteArray()));
@@ -270,6 +286,7 @@ public final class ApkCheck {
                 }
             }
         } catch (Exception ignored) { }
+        systemCertCache = out;
         return out;
     }
 }
