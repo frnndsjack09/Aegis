@@ -53,6 +53,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/vnd.android.package-archive" />
             </intent-filter>
+            <!-- "Share to Aegis" on a screenshot: reads a payment QR code in it. -->
+            <intent-filter android:label="Check QR with Aegis">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
             <!-- "Share to Aegis" on a message: runs the scam checker on it. -->
             <intent-filter android:label="Check with Aegis">
                 <action android:name="android.intent.action.SEND" />

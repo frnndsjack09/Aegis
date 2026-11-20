@@ -113,6 +113,32 @@ public final class Guard {
         p.edit().putStringSet("guard_seen", seen).apply();
     }
 
+    /**
+     * Full scan once a week while new-app alerts are on, so problems turn up even if you never open Aegis.
+     * Skipped on a low battery. Notifies only when something needs you now.
+     */
+    static synchronized void weeklyScan(Context ctx) {
+        if (!isOn(ctx)) return;
+        long last = prefs(ctx).getLong("snap_time", 0);
+        if (System.currentTimeMillis() - last < 7L * 24 * 3600 * 1000) return;
+        Intent bat = ctx.registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (bat != null) {
+            int level = bat.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 100);
+            int scale = Math.max(1, bat.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100));
+            boolean plugged = bat.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0;
+            if (!plugged && level * 100 / scale < 30) return;
+        }
+        List<Finding> found = new Scanner(ctx, IocDb.load(ctx)).run((msg, pct) -> { });
+        int red = 0;
+        String first = null;
+        for (Finding f : found) if (f.level == Finding.Level.RED) { red++; if (first == null) first = f.title; }
+        if (red == 0) return;
+        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        notify(ctx, 7007, "Weekly scan: " + (red == 1 ? "1 thing needs" : red + " things need") + " you now",
+                first + (red > 1 ? " and " + (red - 1) + " more." : ".") + " Open Aegis and run a scan to see what to do.",
+                PendingIntent.getActivity(ctx, 7007, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT), null);
+    }
+
     static final class Alert { String title, text; }
 
     /** Returns an alert for a risky app, or null if it looks fine. */

@@ -11,6 +11,7 @@ public class GuardJob extends JobService {
         new Thread(() -> {
             try {
                 Guard.checkChanged(getApplicationContext());
+                Guard.weeklyScan(getApplicationContext());
             } finally {
                 jobFinished(params, false);
             }

@@ -99,6 +99,12 @@ public class MainActivity extends Activity {
     private static final int REQ_APK = 41;
     private LinearLayout apkCard;
     private Button apkBtn;
+
+    // payment-QR check (Tools tab)
+    private static final int REQ_QR = 44;
+    private LinearLayout qrCard;
+    private Button qrBtn;
+    private TextView qrResult;
     private TextView apkResult;
 
     // scan tab state
@@ -174,6 +180,8 @@ public class MainActivity extends Activity {
         Uri uri = null;
         if (Intent.ACTION_VIEW.equals(in.getAction())) uri = in.getData();
         else if (Intent.ACTION_SEND.equals(in.getAction())) uri = in.getParcelableExtra(Intent.EXTRA_STREAM);
+        String type = in.getType();
+        if (uri != null && type != null && type.startsWith("image/")) { checkQr(uri); return; }
         if (uri != null) { checkApk(uri); return; }
         String text = Intent.ACTION_SEND.equals(in.getAction()) ? in.getStringExtra(Intent.EXTRA_TEXT) : null;
         if (text != null && !text.trim().isEmpty()) checkMessage(text);
@@ -240,8 +248,9 @@ public class MainActivity extends Activity {
 
         c.addView(protectionTitle("New-app alerts"));
         c.addView(cardText("Checks every app you install and warns you at once if it's a known spy app, a "
-                + "remote-control app, or a risky app installed from a file. Runs about every 15 minutes, using "
-                + "almost no battery."));
+                + "remote-control app, a fake bank app, or a risky app installed from a file. Runs about every 15 "
+                + "minutes, using almost no battery. Also runs a full scan once a week and tells you if anything "
+                + "needs you."));
         guardStatus = statusLine();
         c.addView(guardStatus);
         guardBtn = smallButton("Turn on", cPrimary);
@@ -391,6 +400,98 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_APK && res == RESULT_OK && data != null && data.getData() != null) checkApk(data.getData());
+        if (req == REQ_QR && res == RESULT_OK && data != null && data.getData() != null) checkQr(data.getData());
+    }
+
+    /** Reads a QR code from an image and explains what paying it would do. */
+    private void checkQr(Uri uri) {
+        showTab(1);
+        pages[1].post(() -> pages[1].smoothScrollTo(0, Math.max(0, offsetTop(qrCard, pages[1].getChildAt(0)) - dp(8))));
+        setBusy(qrBtn, true, "Reading…");
+        worker.execute(() -> {
+            String text;
+            int fg, bg;
+            try {
+                String qr = decodeQr(uri);
+                if (qr == null) {
+                    text = "No QR code found in this image. Crop the screenshot closer to the QR code and try again.";
+                    fg = cSub;
+                    bg = alpha(cSub, 0x14);
+                } else {
+                    UpiQr.Result r = UpiQr.explain(qr);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(r.level == Finding.Level.RED ? "⚠ " : r.level == Finding.Level.GREEN ? "✓ " : "")
+                            .append(r.headline.toUpperCase(Locale.ROOT)).append("\n\n");
+                    if (r.upi) {
+                        sb.append("Pays: ").append(r.name.isEmpty() ? "(no name)" : r.name).append('\n')
+                                .append("UPI ID: ").append(r.payee).append('\n');
+                        if (!r.amount.isEmpty()) sb.append("Amount: ₹").append(r.amount).append('\n');
+                        sb.append('\n');
+                    }
+                    for (String s : r.reasons) sb.append("• ").append(s).append('\n');
+                    Finding.Level lvl = r.level;
+                    if (r.link != null) {
+                        LinkCheck.Result lr = LinkCheck.check(r.link, IocDb.load(this), PhishDb.load(this), abuseKey());
+                        sb.append('\n').append(lr.text.trim());
+                        lvl = lr.danger ? Finding.Level.RED : lr.warnings ? Finding.Level.YELLOW : Finding.Level.GREEN;
+                    }
+                    if (lvl == Finding.Level.RED) sb.append("\n\nDon't pay. If you already paid, call your bank and 1930 straight away.");
+                    text = sb.toString().trim();
+                    fg = lvl == Finding.Level.RED ? cRed : lvl == Finding.Level.YELLOW ? cYellow : lvl == Finding.Level.GREEN ? cGreen : cInfo;
+                    bg = lvl == Finding.Level.RED ? cRedBg : lvl == Finding.Level.YELLOW ? cYellowBg : lvl == Finding.Level.GREEN ? cGreenBg : cInfoBg;
+                }
+            } catch (SecurityException e) {
+                text = "The app that shared this image didn't let Aegis open it. Tap \"Choose a QR screenshot\" instead.";
+                fg = cSub;
+                bg = alpha(cSub, 0x14);
+            } catch (Exception e) {
+                text = "Couldn't read this image: " + e.getMessage();
+                fg = cSub;
+                bg = alpha(cSub, 0x14);
+            }
+            final String t = text;
+            final int f1 = fg, b1 = bg;
+            main.post(() -> {
+                setBusy(qrBtn, false, "Choose a QR screenshot");
+                showResult(qrResult, t, f1, b1);
+            });
+        });
+    }
+
+    /** Decodes the first QR code in the image, or returns null. Downscales big photos to keep memory low. */
+    private String decodeQr(Uri uri) throws Exception {
+        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+            android.graphics.BitmapFactory.decodeStream(in, null, o);
+        }
+        int sample = 1;
+        while (Math.max(o.outWidth, o.outHeight) / sample > 2000) sample *= 2;
+        o = new android.graphics.BitmapFactory.Options();
+        o.inSampleSize = sample;
+        android.graphics.Bitmap b;
+        try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+            b = android.graphics.BitmapFactory.decodeStream(in, null, o);
+        }
+        if (b == null) throw new Exception("not an image");
+        int w = b.getWidth(), h = b.getHeight();
+        int[] px = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        b.recycle();
+        com.google.zxing.LuminanceSource src = new com.google.zxing.RGBLuminanceSource(w, h, px);
+        java.util.Map<com.google.zxing.DecodeHintType, Object> hints = new java.util.EnumMap<>(com.google.zxing.DecodeHintType.class);
+        hints.put(com.google.zxing.DecodeHintType.TRY_HARDER, Boolean.TRUE);
+        try {
+            return new com.google.zxing.qrcode.QRCodeReader().decode(
+                    new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(src)), hints).getText();
+        } catch (com.google.zxing.ReaderException first) {
+            try {
+                return new com.google.zxing.qrcode.QRCodeReader().decode(
+                        new com.google.zxing.BinaryBitmap(new com.google.zxing.common.GlobalHistogramBinarizer(src)), hints).getText();
+            } catch (com.google.zxing.ReaderException second) {
+                return null;
+            }
+        }
     }
 
     private void pickApk() {
@@ -1018,6 +1119,22 @@ public class MainActivity extends Activity {
         apkCard.addView(apkBtn);
         apkCard.addView(apkResult);
         page.addView(apkCard);
+
+        // --- Payment QR check
+        qrCard = card();
+        qrCard.addView(cardHeader("▦", "Check a payment QR code", cYellow, cYellowBg));
+        qrCard.addView(cardText("Someone sent a QR code to \"receive\" a refund, prize or payment for something you're "
+                + "selling? Scanning a UPI QR always SENDS money. Pick a screenshot of the QR, or share the image to "
+                + "Aegis, and see who it really pays and how much. Nothing leaves the phone."));
+        qrResult = resultBox();
+        qrBtn = primaryButton("Choose a QR screenshot");
+        qrBtn.setOnClickListener(v -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*");
+            try { startActivityForResult(i, REQ_QR); } catch (ActivityNotFoundException e) { toast("No file picker on this phone"); }
+        });
+        qrCard.addView(qrBtn);
+        qrCard.addView(qrResult);
+        page.addView(qrCard);
 
         // --- Trackers
         LinearLayout tr = card();

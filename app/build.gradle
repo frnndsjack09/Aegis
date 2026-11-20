@@ -10,8 +10,8 @@ android {
         applicationId 'com.aegis.scanner'
         minSdk 26          // Android 8.0 and newer
         targetSdk 34
-        versionCode 7
-        versionName '1.5'
+        versionCode 8
+        versionName '1.6'
     }
 
     // One permanent key so every release installs as an update. CI gets it from repo secrets;
@@ -55,6 +55,8 @@ dependencies {
     // Optional Shizuku deep check (Tools tab). Everything else uses the built-in Android SDK.
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
+    // Reads QR codes from screenshots for the payment-QR checker (pure Java, no camera, no network).
+    implementation 'com.google.zxing:core:3.5.3'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303' // real org.json for unit tests (Android's is a stub there)
 }
