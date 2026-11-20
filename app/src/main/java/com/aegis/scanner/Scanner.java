@@ -222,15 +222,19 @@ public class Scanner {
     }
 
     /**
-     * Android 13+ records whether an app came from a store. This matters when the store was later
-     * removed (e.g. a debloated Facebook App Installer): Android then hides the installer's name
-     * from other apps, so it would otherwise look like a sideload.
+     * Android 13+ records where an app came from. True when it says a store, or when the installer's name is
+     * hidden and no source was recorded: that's what a store-installed app looks like after the store itself was
+     * removed (e.g. Xiaomi GetApps or Facebook App Installer debloated). ADB installs record "other" and file
+     * installs record "downloaded/local file", so those still count as sideloads.
      */
     static boolean fromStoreSource(PackageManager pm, String pkg) {
         if (Build.VERSION.SDK_INT < 33) return false;
         try {
-            return pm.getInstallSourceInfo(pkg).getPackageSource()
-                    == android.content.pm.PackageInstaller.PACKAGE_SOURCE_STORE;
+            android.content.pm.InstallSourceInfo s = pm.getInstallSourceInfo(pkg);
+            int src = s.getPackageSource();
+            return src == android.content.pm.PackageInstaller.PACKAGE_SOURCE_STORE
+                    || (s.getInstallingPackageName() == null
+                        && src == android.content.pm.PackageInstaller.PACKAGE_SOURCE_UNSPECIFIED);
         } catch (Exception e) {
             return false;
         }

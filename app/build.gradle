@@ -10,8 +10,8 @@ android {
         applicationId 'com.aegis.scanner'
         minSdk 26          // Android 8.0 and newer
         targetSdk 34
-        versionCode 3
-        versionName '1.2'
+        versionCode 4
+        versionName '1.2.1'
     }
 
     // One permanent key so every release installs as an update. CI gets it from repo secrets;
