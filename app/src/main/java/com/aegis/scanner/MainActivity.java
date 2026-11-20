@@ -89,6 +89,8 @@ public class MainActivity extends Activity {
     // live protection (Scan tab)
     private static final int REQ_NOTIFY = 42;
     private TextView guardStatus, alertStatus;
+    private LinearLayout healthBox;
+    private boolean healthBusy;
     private Button guardBtn, alertBtn;
 
     // app-file check (Tools tab)
@@ -187,6 +189,27 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshProtection();
+        refreshHealth();
+    }
+
+    /** Re-reads the phone check-up in the background and redraws its cards. */
+    private void refreshHealth() {
+        if (healthBox == null || healthBusy) return;
+        healthBusy = true;
+        worker.execute(() -> {
+            List<Finding> list;
+            try {
+                list = PhoneHealth.judge(PhoneHealth.gather(getApplicationContext()));
+            } catch (Exception e) {
+                list = new ArrayList<>();
+            }
+            final List<Finding> fl = list;
+            main.post(() -> {
+                healthBusy = false;
+                healthBox.removeAllViews();
+                for (Finding f : fl) healthBox.addView(findingCard(f));
+            });
+        });
     }
 
     @Override
@@ -589,6 +612,17 @@ public class MainActivity extends Activity {
         page.addView(hero);
         page.addView(buildProtectionCard());
 
+        TextView healthTitle = text("Phone check-up", 18, cText, true);
+        healthTitle.setPadding(dp(8), dp(18), dp(8), dp(2));
+        page.addView(healthTitle);
+        TextView healthSub = text("Restart, updates, storage, battery, memory and built-in ads. Updates each time you open Aegis.",
+                13, cSub, false);
+        healthSub.setPadding(dp(8), 0, dp(8), dp(6));
+        page.addView(healthSub);
+        healthBox = new LinearLayout(this);
+        healthBox.setOrientation(LinearLayout.VERTICAL);
+        page.addView(healthBox);
+
         resultsBox = new LinearLayout(this);
         resultsBox.setOrientation(LinearLayout.VERTICAL);
         page.addView(resultsBox);
@@ -867,6 +901,11 @@ public class MainActivity extends Activity {
                 prefs.edit().putStringSet("trusted", t).apply();
                 collapse(card, null);
                 toast("Marked as trusted. It won't be flagged again (undo in Tools).");
+                break;
+            case COPY:
+                android.content.ClipboardManager cb = getSystemService(android.content.ClipboardManager.class);
+                if (cb != null) cb.setPrimaryClip(android.content.ClipData.newPlainText("Aegis", a.target));
+                toast("Copied");
                 break;
         }
     }

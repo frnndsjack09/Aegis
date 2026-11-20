@@ -24,6 +24,9 @@ Every finding is rated **Act now / Review / Good to know / All good**, with butt
 - **Scam message alerts:** reads new SMS, WhatsApp and Telegram notifications, runs the offline scam checker and link checker, and warns you about scams. Messages are never stored or sent anywhere. Needs Notification access; on Android 13+ sideloaded apps first need App info → ⋮ → Allow restricted settings. Tap the alert to see the full explanation.
 - **Share to Aegis:** share any message text to Aegis to check it.
 
+**Phone check-up** (Scan tab, refreshes each time you open Aegis)
+- Restart reminder after 3 and 7 days on, age of the last security update, Private DNS (one-tap copy of `dns.adguard-dns.com` to block ads and phishing sites in every app), free storage and the biggest apps (with Usage access), battery temperature and health, free memory, and Xiaomi/Facebook ad and tracking apps that came with the phone, with copyable ADB remove and restore commands.
+
 **Tools tab** (uses the internet only when you tap)
 - **Trackers inside your apps:** finds Facebook, Google, AppsFlyer and other tracking code (Exodus Privacy method).
 - **Password leak check:** Have I Been Pwned. Only 5 characters of a hash leave the phone.

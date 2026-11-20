@@ -10,7 +10,7 @@ public class Finding {
     public enum Level { RED, YELLOW, INFO, GREEN }
 
     /** What a button under the finding does. */
-    public enum ActionType { APP_INFO, UNINSTALL, OPEN_SETTINGS, OPEN_URL, DIAL, TRUST_APP }
+    public enum ActionType { APP_INFO, UNINSTALL, OPEN_SETTINGS, OPEN_URL, DIAL, TRUST_APP, COPY }
 
     public static class Action {
         public final String label;
