@@ -59,8 +59,12 @@ public class ScamAlertService extends NotificationListenerService {
         return s != null && s.contains(new ComponentName(ctx, ScamAlertService.class).flattenToString());
     }
 
+    /** The running service, so the app can switch the call warning on without a restart. Same process only. */
+    static volatile ScamAlertService instance;
+
     @Override
     public void onListenerConnected() {
+        instance = this;
         smsApp = Telephony.Sms.getDefaultSmsPackage(this);
         IntentFilter f = new IntentFilter(Intent.ACTION_PACKAGE_ADDED);
         f.addAction(Intent.ACTION_PACKAGE_REPLACED);
@@ -68,11 +72,120 @@ public class ScamAlertService extends NotificationListenerService {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(installs, f, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(installs, f);
         receiverOn = true;
+        syncCallWatch();
     }
 
     @Override
     public void onListenerDisconnected() {
         if (receiverOn) { unregisterReceiver(installs); receiverOn = false; }
+        stopCallWatch();
+        instance = null;
+    }
+
+    // ------------------------------------------------------------------ "on a call" warning
+
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Object callListener;      // TelephonyCallback (Android 12+) or PhoneStateListener
+    private CallGuard call;           // non-null while a call is active
+    private long lastEventTime;
+
+    /** Starts or stops listening for calls to match the setting and the phone permission. */
+    void syncCallWatch() {
+        boolean want = getSharedPreferences(Scanner.PREFS, MODE_PRIVATE).getBoolean(CallGuard.PREF_ON, false)
+                && (Build.VERSION.SDK_INT < 31
+                    || checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED);
+        if (want && callListener == null) startCallWatch();
+        else if (!want && callListener != null) stopCallWatch();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void startCallWatch() {
+        android.telephony.TelephonyManager tm = getSystemService(android.telephony.TelephonyManager.class);
+        if (tm == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                CallCallback cb = new CallCallback(this);
+                tm.registerTelephonyCallback(getMainExecutor(), cb);
+                callListener = cb;
+            } else {
+                android.telephony.PhoneStateListener l = new android.telephony.PhoneStateListener() {
+                    @Override public void onCallStateChanged(int state, String number) { onCallState(state); }
+                };
+                tm.listen(l, android.telephony.PhoneStateListener.LISTEN_CALL_STATE);
+                callListener = l;
+            }
+        } catch (SecurityException e) {
+            callListener = null; // permission was taken away
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void stopCallWatch() {
+        android.telephony.TelephonyManager tm = getSystemService(android.telephony.TelephonyManager.class);
+        if (tm != null && callListener != null) {
+            if (Build.VERSION.SDK_INT >= 31 && callListener instanceof android.telephony.TelephonyCallback) {
+                tm.unregisterTelephonyCallback((android.telephony.TelephonyCallback) callListener);
+            } else if (callListener instanceof android.telephony.PhoneStateListener) {
+                tm.listen((android.telephony.PhoneStateListener) callListener, android.telephony.PhoneStateListener.LISTEN_NONE);
+            }
+        }
+        callListener = null;
+        onCallState(android.telephony.TelephonyManager.CALL_STATE_IDLE);
+    }
+
+    @android.annotation.TargetApi(31)
+    private static final class CallCallback extends android.telephony.TelephonyCallback
+            implements android.telephony.TelephonyCallback.CallStateListener {
+        private final ScamAlertService s;
+        CallCallback(ScamAlertService s) { this.s = s; }
+        @Override public void onCallStateChanged(int state) { s.onCallState(state); }
+    }
+
+    /** OFFHOOK = on a call: watch which app comes to the front every 2 seconds until the call ends. */
+    private void onCallState(int state) {
+        mainHandler.removeCallbacks(poll);
+        if (state == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK) {
+            if (call == null) { call = CallGuard.newCall(); lastEventTime = System.currentTimeMillis(); }
+            mainHandler.postDelayed(poll, 2000);
+        } else if (state == android.telephony.TelephonyManager.CALL_STATE_IDLE) {
+            call = null;
+        }
+    }
+
+    private final Runnable poll = new Runnable() {
+        @Override public void run() {
+            if (call == null) return;
+            CallGuard g = call;
+            long from = lastEventTime, to = System.currentTimeMillis();
+            lastEventTime = to;
+            worker.execute(() -> checkForeground(g, from, to));
+            mainHandler.postDelayed(this, 2000);
+        }
+    };
+
+    /** Needs Usage access; without it queryEvents returns nothing and no warning is shown. */
+    @SuppressWarnings("deprecation")
+    private void checkForeground(CallGuard g, long from, long to) {
+        try {
+            android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
+            android.app.usage.UsageEvents ev = usm.queryEvents(from, to);
+            android.app.usage.UsageEvents.Event e = new android.app.usage.UsageEvents.Event();
+            while (ev.hasNextEvent()) {
+                ev.getNextEvent(e);
+                if (e.getEventType() != android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) continue;
+                String pkg = e.getPackageName();
+                if (!g.shouldWarn(pkg)) continue;
+                String label;
+                try { label = getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0)).toString(); }
+                catch (Exception x) { label = pkg; }
+                String kind = CallGuard.kind(pkg);
+                PendingIntent tap = PendingIntent.getActivity(this, 1930,
+                        new Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:1930")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                Guard.notify(this, ("call" + pkg).hashCode(), CallGuard.title(label, kind),
+                        CallGuard.text(kind) + "\nTap to dial 1930 (cyber fraud helpline).", tap, null);
+            }
+        } catch (Exception ignored) { }
     }
 
     @Override

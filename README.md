@@ -24,6 +24,8 @@ Every finding is rated **Act now / Review / Good to know / All good**, with butt
 - **New-app alerts:** checks every app you install or update and notifies you right away if it's a known spy app, a remote-control app, or a risky app installed from a file. Background check about every 15 minutes, instant while scam alerts are on. Notification has an Uninstall button.
 - **Scam message alerts:** reads new SMS, WhatsApp and Telegram notifications, runs the offline scam checker and link checker, and warns you about scams. Messages are never stored or sent anywhere. Needs Notification access; on Android 13+ sideloaded apps first need App info → ⋮ → Allow restricted settings. Tap the alert to see the full explanation.
 - **Share to Aegis:** share any message text to Aegis to check it.
+- **"On a call" warning (opt-in):** if a UPI, bank or screen-sharing app comes to the front while you're on a phone call, Aegis warns you once per app per call (the "bank officer / police / customer care" scam). Uses the Phone permission only to know a call is on, never the number, plus Usage access. Runs inside the scam-alert service, checking every 2 seconds only during calls.
+- **Keep protection running:** shows whether battery saver can pause Aegis, with buttons to allow it in the background and (on Xiaomi) open Autostart.
 
 **Phone check-up** (Scan tab, refreshes each time you open Aegis)
 - Restart reminder after 3 and 7 days on, age of the last security update, Private DNS (one-tap copy of `dns.adguard-dns.com` to block ads and phishing sites in every app), free storage and the biggest apps (with Usage access), battery temperature and health, free memory, and Xiaomi/Facebook ad and tracking apps that came with the phone, with copyable ADB remove and restore commands.

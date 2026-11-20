@@ -88,7 +88,9 @@ public class MainActivity extends Activity {
 
     // live protection (Scan tab)
     private static final int REQ_NOTIFY = 42;
-    private TextView guardStatus, alertStatus;
+    private TextView guardStatus, alertStatus, callStatus, batteryStatus;
+    private Button callBtn;
+    private static final int REQ_PHONE = 43;
     private LinearLayout healthBox;
     private boolean healthBusy;
     private Button guardBtn, alertBtn;
@@ -215,6 +217,11 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_PHONE && results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+                && !PhoneHealth.hasUsageAccess(this)) {
+            toast("Now allow Usage access for Aegis");
+            launch(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+        }
         refreshProtection();
     }
 
@@ -276,6 +283,62 @@ public class MainActivity extends Activity {
         row.addView(alertBtn);
         row.addView(info);
         c.addView(row);
+
+        c.addView(protectionTitle("\"On a call\" warning"));
+        c.addView(cardText("Scammers posing as bank staff, police or customer care keep you on the phone while you "
+                + "open a UPI, bank or screen-sharing app. Aegis warns you if that happens. It only sees that a call is "
+                + "on, never the number. Needs scam message alerts, the Phone permission and Usage access."));
+        callStatus = statusLine();
+        c.addView(callStatus);
+        callBtn = smallButton("Turn on", cPrimary);
+        callBtn.setOnClickListener(v -> {
+            boolean on = !prefs.getBoolean(CallGuard.PREF_ON, false);
+            prefs.edit().putBoolean(CallGuard.PREF_ON, on).apply();
+            if (on) {
+                askNotifyPermission();
+                if (android.os.Build.VERSION.SDK_INT >= 31
+                        && checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.READ_PHONE_STATE}, REQ_PHONE);
+                } else if (!PhoneHealth.hasUsageAccess(this)) {
+                    toast("Allow Usage access for Aegis");
+                    launch(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+                }
+            }
+            refreshProtection();
+        });
+        c.addView(callBtn);
+
+        c.addView(protectionTitle("Keep protection running"));
+        c.addView(cardText("Battery savers, especially on Xiaomi, Oppo, Vivo and Realme phones, can stop Aegis in the "
+                + "background so alerts arrive late or not at all."));
+        batteryStatus = statusLine();
+        c.addView(batteryStatus);
+        LinearLayout brow = new LinearLayout(this);
+        Button battBtn = smallButton("Allow in background", cPrimary);
+        battBtn.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (Exception e) {
+                launch(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            }
+        });
+        brow.addView(battBtn);
+        if ("xiaomi".equalsIgnoreCase(android.os.Build.MANUFACTURER)) {
+            Button auto = smallButton("Xiaomi Autostart", cSub);
+            auto.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent().setComponent(new android.content.ComponentName("com.miui.securitycenter",
+                            "com.miui.permcenter.autostart.AutoStartManagementActivity")));
+                    toast("Find Aegis and switch Autostart on");
+                } catch (Exception e) {
+                    launch(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                }
+            });
+            brow.addView(auto);
+        }
+        c.addView(brow);
+
         refreshProtection();
         return c;
     }
@@ -305,6 +368,23 @@ public class MainActivity extends Activity {
                 : "○ Off");
         alertStatus.setTextColor(alertsOn ? (muted ? cYellow : cGreen) : cSub);
         alertBtn.setText(alertsOn ? "Turn off" : "Turn on");
+
+        boolean callWanted = prefs.getBoolean(CallGuard.PREF_ON, false);
+        boolean phonePerm = android.os.Build.VERSION.SDK_INT < 31
+                || checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        boolean usage = PhoneHealth.hasUsageAccess(this);
+        String missing = !alertsOn ? "turn on scam message alerts" : !phonePerm ? "allow the Phone permission"
+                : !usage ? "allow Usage access" : null;
+        callStatus.setText(!callWanted ? "○ Off" : missing == null ? "● On" : "● On, but " + missing + " first.");
+        callStatus.setTextColor(!callWanted ? cSub : missing == null ? cGreen : cYellow);
+        callBtn.setText(callWanted ? "Turn off" : "Turn on");
+        ScamAlertService s = ScamAlertService.instance;
+        if (s != null) s.syncCallWatch();
+
+        android.os.PowerManager pwr = getSystemService(android.os.PowerManager.class);
+        boolean free = pwr != null && pwr.isIgnoringBatteryOptimizations(getPackageName());
+        batteryStatus.setText(free ? "● Not limited by battery saver" : "○ Battery saver may pause alerts");
+        batteryStatus.setTextColor(free ? cGreen : cYellow);
     }
 
     @Override

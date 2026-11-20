@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeps the new-app check scheduled after the phone restarts. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Optional "on a call" warning: only to know WHEN you're on a call. Aegis never reads numbers or call history. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Lets the "Keep protection running" button ask Android not to pause Aegis's alerts. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="false"

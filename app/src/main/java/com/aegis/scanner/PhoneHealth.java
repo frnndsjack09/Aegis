@@ -271,13 +271,23 @@ public final class PhoneHealth {
     }
 
     /** Apps of 500 MB or more by app + data size, biggest first. Null without Usage access. */
-    private static List<String[]> bigApps(Context ctx, PackageManager pm) {
+    /** True if the user allowed Usage access for Aegis. */
+    @SuppressWarnings("deprecation")
+    static boolean hasUsageAccess(Context ctx) {
         try {
             AppOpsManager ops = ctx.getSystemService(AppOpsManager.class);
             int mode = Build.VERSION.SDK_INT >= 29
                     ? ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), ctx.getPackageName())
                     : ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), ctx.getPackageName());
-            if (mode != AppOpsManager.MODE_ALLOWED) return null;
+            return mode == AppOpsManager.MODE_ALLOWED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static List<String[]> bigApps(Context ctx, PackageManager pm) {
+        try {
+            if (!hasUsageAccess(ctx)) return null;
             StorageStatsManager ssm = ctx.getSystemService(StorageStatsManager.class);
             List<String[]> out = new ArrayList<>();
             for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
